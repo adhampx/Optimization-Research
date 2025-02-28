@@ -19,12 +19,12 @@
 ```
 Optimization-Research
 └── Code
-    ├── HYO-IDS.py
-    ├── shap_outputs
-    │   ├── shap_force.html
-    │   └── shap_summary.png
-    ├── BestFitness+OptimalFeaturesSubset.txt
-    └── final_aggregated_report.csv
+│   ├── HYO-IDS.py
+├── shap_outputs
+│       ├── shap_force.html
+│       └── shap_summary.png
+├── BestFitness+OptimalFeaturesSubset.txt
+└── final_aggregated_report.csv
 ```
 
 ### File Descriptions
