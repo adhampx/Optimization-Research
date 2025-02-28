@@ -124,4 +124,34 @@ Optimization complete. Best fitness: 0.8943462947411693
 Optimal feature subset (indices): [11 14 21 28 30 39 41 44 46]
 Number of selected features: 9 out of 47
 
+Optimization complete. Best fitness: 0.8914107220550529
+Optimal feature subset (indices): [ 0  2  9 15 19 26 28 30 32 44]
+Number of selected features: 10 out of 47
 
+Optimization complete. Best fitness: 0.8973305846373603
+Optimal feature subset (indices): [ 3  8 11 12 18 21 28 34 40]
+Number of selected features: 9 out of 47
+
+Optimization complete. Best fitness: 0.8947685753400126
+Optimal feature subset (indices): [ 2  5 16 32 33 36 38 40 43]
+Number of selected features: 9 out of 47
+
+Optimization complete. Best fitness: 0.8878596792071727
+Optimal feature subset (indices): [ 2  6 21 27 29 31 34 38 40 42]
+Number of selected features: 10 out of 47
+
+Optimization complete. Best fitness: 0.9019543257174585
+Optimal feature subset (indices): [ 7 12 17 20 21 29 34 43 45]
+Number of selected features: 9 out of 47
+
+Optimization complete. Best fitness: 0.911939859976096
+Optimal feature subset (indices): [ 1 19 24 31 34 42 45]
+Number of selected features: 7 out of 47
+
+Optimization complete. Best fitness: 0.88751315824816
+Optimal feature subset (indices): [ 0  2  4 14 16 17 19 28 31 41]
+Number of selected features: 10 out of 47
+
+Optimization complete. Best fitness: 0.8988859867184743
+Optimal feature subset (indices): [ 0  2  3  5 11 28 33 35 38]
+Number of selected features: 9 out of 47
