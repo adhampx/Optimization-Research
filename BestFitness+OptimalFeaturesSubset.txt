@@ -155,3 +155,21 @@ Number of selected features: 10 out of 47
 Optimization complete. Best fitness: 0.8988859867184743
 Optimal feature subset (indices): [ 0  2  3  5 11 28 33 35 38]
 Number of selected features: 9 out of 47
+
+=== Executing Run 20 ===
+
+Optimization complete. Best fitness: 0.8980712608281034
+Optimal feature subset (indices): [ 3  4  8 13 25 30 35 37 41]
+Number of selected features: 9 out of 47
+
+Optimization complete. Best fitness: 0.9305271596875259
+Optimal feature subset (indices): [ 9 20 24 25 29 40]
+Number of selected features: 6 out of 47
+
+Optimization complete. Best fitness: 0.9073490503356039
+Optimal feature subset (indices): [ 1  7  8 17 36 40 42 44]
+Number of selected features: 8 out of 47
+
+Optimization complete. Best fitness: 0.8788142898595296
+Optimal feature subset (indices): [ 3  4  6 12 17 24 27 28 36 45 46]
+Number of selected features: 11 out of 47
