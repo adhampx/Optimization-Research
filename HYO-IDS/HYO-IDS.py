@@ -296,13 +296,13 @@ def shap_analysis(model, X, y, file_id=1, output_dir="shap_outputs"):
     # Global summary plot
     plt.figure()
     shap.summary_plot(shap_values, X_sample, show=False)
-    summary_path = os.path.join(output_dir, "shap_summary_file1.png")
+    summary_path = os.path.join(output_dir, "HYO-IDS\\shap_summary_file1.png")
     plt.savefig(summary_path, bbox_inches='tight')
     plt.close()
     
     # Local force plot for the first instance; saved as HTML.
     force_plot = shap.force_plot(explainer.expected_value, shap_values[0, :], X_sample.iloc[0, :], matplotlib=False)
-    force_path = os.path.join(output_dir, "shap_force_file1.html")
+    force_path = os.path.join(output_dir, "HYO-IDS\\shap_force_file1.html")
     shap.save_html(force_path, force_plot)
     print(f"SHAP plots saved: {summary_path} and {force_path}")
     
@@ -366,7 +366,7 @@ def main():
     num_runs = 199
     
     # Path for the aggregated report CSV
-    report_path = "final_aggregated_report.csv"
+    report_path = "HYO-IDS\\final_aggregated_report.csv"
     # Create the report file with header if it doesn't exist
     if not os.path.exists(report_path):
         with open(report_path, 'w') as f:
