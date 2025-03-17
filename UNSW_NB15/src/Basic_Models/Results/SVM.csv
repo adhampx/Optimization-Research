@@ -1,0 +1,2 @@
+Model,Timestamp,Best_Parameters,Cross_Val_Accuracy_Mean,Cross_Val_Accuracy_Std,Validation_Accuracy,Test_Accuracy,Test_Precision,Test_Recall,Test_F1_Score,Test_AUC_ROC,Test_FPR,Test_FRR,TN,FP,FN,TP,Training_Sample_Size,Validation_Sample_Size,Test_Sample_Size
+Support Vector Machine,2025-03-17 05:28:59,"{'C': 10, 'gamma': 'auto', 'kernel': 'rbf'}",0.981999999640036,0.0009798971923157557,0.98195,0.9832,0.9295302013422819,0.46790540540540543,0.6224719101123596,0.7576874731929992,0.001082028029678483,0.5320945945945946,19387,21,315,277,10000,20000,20000

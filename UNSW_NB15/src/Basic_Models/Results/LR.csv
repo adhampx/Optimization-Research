@@ -1,0 +1,2 @@
+Model,Timestamp,Best_Parameters,Cross_Val_Accuracy_Mean,Cross_Val_Accuracy_Std,Validation_Accuracy,Test_Accuracy,Test_Precision,Test_Recall,Test_F1_Score,Test_AUC_ROC,Test_FPR,Test_FRR,TN,FP,FN,TP
+Logistic Regression,2025-03-17 05:57:58,"{'C': 100, 'max_iter': 1000, 'penalty': 'l1', 'solver': 'liblinear'}",0.9950061219907965,0.00016500446131859463,0.9942190476190477,0.9946381463033686,0.8847222222222222,0.9555955595559555,0.9187941727967691,0.9993490132740701,0.0040819136798205926,0.0444044404440444,101253,415,148,3185

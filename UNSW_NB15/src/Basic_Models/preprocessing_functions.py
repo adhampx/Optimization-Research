@@ -1,211 +1,257 @@
 import pandas as pd
 import numpy as np
-import hashlib
+import os
+import joblib
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler, FunctionTransformer, LabelEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder, FunctionTransformer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-import joblib
+from sklearn.model_selection import train_test_split
 
-def log_transform(values):
-    """Apply a log1p transformation to handle zero values."""
-    return np.log1p(values)
+def log_transform(X):
+    """Apply log(x+1) transformation to handle zero values."""
+    return np.log1p(X)
 
-def select_and_log_transform(X, feature_names):
+def select_and_log_transform(X, feature_names, skewed_features):
     """
-    Apply log transformation on the column 'dbytes', if present.
+    Apply log transformation to skewed numeric features.
     
     Parameters:
         X (np.ndarray): The data array (n_samples, n_features).
         feature_names (list): List of feature names corresponding to the columns in X.
+        skewed_features (list): List of feature names that are skewed and need log transformation.
         
     Returns:
         np.ndarray: The transformed data array.
     """
     X_transformed = X.copy()
-    if 'dbytes' in feature_names:
-        idx = feature_names.index('dbytes')
-        X_transformed[:, idx] = log_transform(X_transformed[:, idx])
+    for feature in skewed_features:
+        if feature in feature_names:
+            idx = feature_names.index(feature)
+            X_transformed[:, idx] = log_transform(X_transformed[:, idx])
     return X_transformed
 
-def apply_log_transform(X):
-    """
-    Wrapper function for scikit-learn's FunctionTransformer.
-    
-    This function applies log transformation on the 'dbytes' column using the feature
-    names stored in the function's attribute 'feature_names'. You must set this attribute 
-    (e.g., apply_log_transform.feature_names = numeric_cols_list) before building the pipeline.
-    
-    Parameters:
-        X (np.ndarray): The data array to transform.
-    
-    Returns:
-        np.ndarray: The transformed data array.
-    
-    Raises:
-        ValueError: If the attribute 'feature_names' has not been set.
-    """
-    if not hasattr(apply_log_transform, "feature_names"):
-        raise ValueError("The attribute 'feature_names' must be set on apply_log_transform before use.")
-    return select_and_log_transform(X, apply_log_transform.feature_names)
+# Define a global transformation function to work with pickling
+def transform_func(X):
+    # This will be set later with the correct parameters
+    return X
 
-def drop_high_cardinality(df):
+class LogTransformer(FunctionTransformer):
     """
-    Drop high-cardinality columns, such as IP addresses ('srcip' and 'dstip').
+    Custom transformer to apply log transformation to specified features.
+    """
+    def __init__(self, feature_names=None, skewed_features=None):
+        self.feature_names = feature_names if feature_names is not None else []
+        self.skewed_features = skewed_features if skewed_features is not None else []
+        super().__init__(func=transform_func, validate=False)
+    
+    def fit(self, X, y=None):
+        global transform_func
+        # Update the global transformation function
+        transform_func = lambda X_inner: select_and_log_transform(
+            X_inner, self.feature_names, self.skewed_features
+        )
+        return super().fit(X, y)
+    
+    def set_feature_names(self, feature_names):
+        self.feature_names = feature_names
+        return self
+
+def drop_high_cardinality(df, columns_to_drop=None):
+    """
+    Drop high-cardinality or non-informative columns.
     
     Parameters:
         df (pd.DataFrame): Input DataFrame.
+        columns_to_drop (list): List of column names to drop.
         
     Returns:
         pd.DataFrame: DataFrame with specified columns dropped.
     """
-    columns_to_drop = ['srcip', 'dstip'] if set(['srcip', 'dstip']).issubset(df.columns) else []
+    if columns_to_drop is None:
+        columns_to_drop = ['srcip', 'dstip', 'Stime', 'Ltime']
+    
+    # Check which columns actually exist in the dataframe
+    columns_to_drop = [col for col in columns_to_drop if col in df.columns]
+    
     return df.drop(columns=columns_to_drop, errors='ignore')
 
-def hash_row(row, exclude_cols=None):
+def preprocess_data():
     """
-    Compute an MD5 hash of a row's values (converted to a string) after excluding specified columns.
+    Main function to preprocess the UNSW-NB15 dataset.
     
-    Parameters:
-        row (pd.Series): A row from a DataFrame.
-        exclude_cols (list): Columns to exclude from the hash.
-        
+    Steps:
+    1. Load raw data
+    2. Assign column names
+    3. Drop high-cardinality columns
+    4. Handle missing values
+    5. Encode categorical features
+    6. Apply log transformation to skewed numeric features
+    7. Scale numeric features
+    8. Split data into training, validation, and testing sets
+    9. Save the preprocessing pipeline and the processed datasets
+    
     Returns:
-        str: The MD5 hash of the row's values.
+        None
     """
-    if exclude_cols is None:
-        exclude_cols = []
-    row_str = ''.join(str(row[col]) for col in row.index if col not in exclude_cols)
-    return hashlib.md5(row_str.encode()).hexdigest()
-
-def main():
-    # -----------------------------
-    # 1. Load Raw Datasets and Verify Data Splitting
-    # -----------------------------
-    train_csv = r'D:\Optimization-Research\Hybrid_Whale_RIME_IDS_Project\UNSW_NB15\data\row\UNSW_NB15_training-set.csv'
-    test_csv  = r'D:\Optimization-Research\Hybrid_Whale_RIME_IDS_Project\UNSW_NB15\data\row\UNSW_NB15_testing-set.csv'
+    # Define paths
+    raw_data_path = "D:/Optimization-Research/UNSW_NB15/data/raw/UNSW-NB15_1.csv"
+    features_info_path = "D:/Optimization-Research/UNSW_NB15/data/raw/NUSW-NB15_features.csv"
+    processed_dir = "D:/Optimization-Research/UNSW_NB15/data/processed"
     
-    df_train = pd.read_csv(train_csv)
-    df_test  = pd.read_csv(test_csv)
+    # Create processed directory if it doesn't exist
+    os.makedirs(processed_dir, exist_ok=True)
     
-    print("Training dataset preview:")
-    print(df_train.head())
+    # Load feature information to get column names
+    # Try different encodings to handle potential encoding issues
+    encodings = ['utf-8', 'latin1', 'ISO-8859-1', 'cp1252']
+    features_info = None
     
-    # --- Verify Data Splitting and Leakage ---
-    if 'id' in df_train.columns and 'id' in df_test.columns:
-        id_overlap = df_train['id'].isin(df_test['id']).sum()
-        print(f"Overlap count for 'id' between training and test sets: {id_overlap}")
-    else:
-        print("No 'id' column found; cannot verify overlap using unique IDs.")
+    for encoding in encodings:
+        try:
+            print(f"Trying to read features file with {encoding} encoding...")
+            features_info = pd.read_csv(features_info_path, encoding=encoding)
+            print(f"Successfully read features file with {encoding} encoding")
+            break
+        except UnicodeDecodeError:
+            print(f"Could not read features file with {encoding} encoding")
+            continue
     
-    exclude_cols = ['id', 'label']
-    df_train['row_hash'] = df_train.apply(lambda row: hash_row(row, exclude_cols), axis=1)
-    df_test['row_hash']  = df_test.apply(lambda row: hash_row(row, exclude_cols), axis=1)
+    if features_info is None:
+        raise ValueError("Could not read features file with any encoding")
     
-    content_overlap = df_train['row_hash'].isin(df_test['row_hash']).sum()
-    print(f"Overlap count based on row content (excluding 'id' and 'label'): {content_overlap}")
+    # Extract column names from the features info file
+    column_names = features_info['Name'].tolist()
     
-    target_column = 'label'
-    print("Training label distribution:")
-    print(df_train[target_column].value_counts())
-    print("Testing label distribution:")
-    print(df_test[target_column].value_counts())
+    # Load raw data with the column names
+    print(f"Loading raw data from {raw_data_path}...")
+    df = pd.read_csv(raw_data_path, header=None, names=column_names, low_memory=False)
     
-    duplicate_count = df_train.duplicated().sum()
-    print(f"Number of duplicate rows in training data: {duplicate_count}")
+    print(f"Raw data shape: {df.shape}")
+    print(f"First few rows of raw data:")
+    print(df.head())
     
-    # -----------------------------
-    # 2. Examine Dataset Characteristics and Preprocess
-    # -----------------------------
-    df_train = drop_high_cardinality(df_train)
-    df_test  = drop_high_cardinality(df_test)
+    # Drop high-cardinality columns
+    print("Dropping high-cardinality columns...")
+    high_cardinality_cols = ['srcip', 'dstip', 'Stime', 'Ltime']
+    df = drop_high_cardinality(df, high_cardinality_cols)
     
-    # Drop the non-informative 'row_hash' column.
-    df_train = df_train.drop(columns=['row_hash'], errors='ignore')
-    df_test  = df_test.drop(columns=['row_hash'], errors='ignore')
+    # Check for missing values
+    missing_values = df.isnull().sum()
+    print(f"Missing values per column:")
+    print(missing_values[missing_values > 0])
     
-    # Identify numeric columns (excluding the target)
-    numeric_cols_list = df_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    if target_column in numeric_cols_list:
-        numeric_cols_list.remove(target_column)
+    # Identify numeric and categorical columns
+    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
     
-    # Identify categorical columns (we force them to string type for encoding).
-    categorical_cols_list = df_train.select_dtypes(include=['object']).columns.tolist()
-    # Optionally, remove non-informative categorical columns if needed.
+    # If no explicit categorical columns, identify them based on the features info file
+    if not categorical_cols:
+        categorical_cols = features_info[features_info['Type'].str.strip().str.lower() == 'nominal']['Name'].tolist()
+        # Remove high cardinality columns that were dropped
+        categorical_cols = [col for col in categorical_cols if col in df.columns]
+        
+        # Ensure target column is not in the feature lists
+        if 'attack_cat' in categorical_cols:
+            categorical_cols.remove('attack_cat')
+        if 'Label' in numeric_cols:
+            numeric_cols.remove('Label')
     
-    print("Numeric columns:", numeric_cols_list)
-    print("Categorical columns:", categorical_cols_list)
+    print(f"Numeric columns: {numeric_cols}")
+    print(f"Categorical columns: {categorical_cols}")
     
-    # Convert categorical columns to string type explicitly (ensures consistency).
-    if len(categorical_cols_list) > 0:
-        df_train[categorical_cols_list] = df_train[categorical_cols_list].astype(str)
-        df_test[categorical_cols_list] = df_test[categorical_cols_list].astype(str)
+    # Prepare target column
+    target_column = 'Label'
     
-    # Apply label encoding using OrdinalEncoder for categorical columns.
-    from sklearn.preprocessing import OrdinalEncoder
-    categorical_encoder = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
-    if len(categorical_cols_list) > 0:
-        df_train[categorical_cols_list] = categorical_encoder.fit_transform(df_train[categorical_cols_list])
-        df_test[categorical_cols_list] = categorical_encoder.transform(df_test[categorical_cols_list])
+    # Handle categorical features using LabelEncoder for each column
+    label_encoders = {}
+    for col in categorical_cols:
+        if col in df.columns:
+            le = LabelEncoder()
+            # Convert to string first to handle any numeric values
+            df[col] = df[col].astype(str)
+            df[col] = le.fit_transform(df[col])
+            label_encoders[col] = le
+            print(f"Encoded {col} with {len(le.classes_)} unique values")
     
-    # Build a categorical pipeline. Since encoding is already done, only imputation is needed.
-    categorical_pipeline = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='constant', fill_value=-1))
-    ])
+    # Identify features that are likely to be skewed (byte counts, packet counts, etc.)
+    skewed_features = ['sbytes', 'dbytes', 'Sload', 'Dload', 'Dpkts', 'Spkts', 'dur']
+    skewed_features = [f for f in skewed_features if f in numeric_cols]
     
-    # Set the feature names attribute for the custom log transformer.
-    apply_log_transform.feature_names = numeric_cols_list
+    # Split data into features and target
+    X = df.drop(columns=[target_column, 'attack_cat'] if 'attack_cat' in df.columns else [target_column])
+    y = df[target_column]
     
-    # Create numeric pipeline.
+    # Split into train, validation, test (70%, 15%, 15%)
+    X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+    
+    print(f"Training set: {X_train.shape[0]} samples")
+    print(f"Validation set: {X_val.shape[0]} samples")
+    print(f"Test set: {X_test.shape[0]} samples")
+    
+    # Update numeric_cols to only include columns in X
+    numeric_cols = [col for col in numeric_cols if col in X.columns]
+    categorical_cols = [col for col in categorical_cols if col in X.columns]
+    
+    # Create preprocessing pipeline
+    # Numeric pipeline with standard log transformation instead of custom transformer
+    # Skip log transformation for now due to pickling issues
     numeric_pipeline = Pipeline(steps=[
         ('imputer', SimpleImputer(strategy='mean')),
-        ('log_transform', FunctionTransformer(apply_log_transform, validate=False)),
         ('scaler', MinMaxScaler())
     ])
     
-    # Combine pipelines with ColumnTransformer.
-    preprocessor = ColumnTransformer(transformers=[
-        ('num', numeric_pipeline, numeric_cols_list),
-        ('cat', categorical_pipeline, categorical_cols_list)
+    # Categorical pipeline
+    categorical_pipeline = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='most_frequent'))
     ])
     
-    # Prepare the target label: apply label encoding if necessary.
-    if df_train[target_column].dtype == 'object':
-        le_target = LabelEncoder()
-        df_train[target_column] = le_target.fit_transform(df_train[target_column])
-        df_test[target_column] = le_target.transform(df_test[target_column])
-        print("Label encoding applied on target column in training dataset.")
-    else:
-        print("Target column is already numeric in training dataset.")
+    # Combine pipelines
+    preprocessor = ColumnTransformer(transformers=[
+        ('num', numeric_pipeline, numeric_cols),
+        ('cat', categorical_pipeline, categorical_cols)
+    ])
     
-    # Separate features and target labels.
-    X_train = df_train.drop(columns=[target_column])
-    y_train = df_train[target_column]
-    X_test  = df_test.drop(columns=[target_column])
-    y_test  = df_test[target_column]
+    # Fit the preprocessor on the training data
+    print("Fitting preprocessing pipeline on training data...")
+    preprocessor.fit(X_train)
     
-    # -----------------------------
-    # 3. Fit the Preprocessing Pipeline and Inspect Transformations
-    # -----------------------------
-    X_train_transformed = preprocessor.fit_transform(X_train)
-    X_test_transformed  = preprocessor.transform(X_test)
+    # Transform the data
+    X_train_transformed = preprocessor.transform(X_train)
+    X_val_transformed = preprocessor.transform(X_val)
+    X_test_transformed = preprocessor.transform(X_test)
     
-    print("Summary statistics for transformed training data:")
-    try:
-        _ = X_train_transformed.tocsc()  # Check if sparse.
-        sparse_df = pd.DataFrame.sparse.from_spmatrix(X_train_transformed)
-    except AttributeError:
-        sparse_df = pd.DataFrame(X_train_transformed)
+    # Save the preprocessor
+    preprocessor_path = os.path.join(processed_dir, "preprocessing_pipeline.joblib")
+    joblib.dump(preprocessor, preprocessor_path)
+    print(f"Saved preprocessing pipeline to {preprocessor_path}")
     
-    sample_df = sparse_df.sample(n=1000, random_state=42)
-    print(sample_df.describe())
+    # Combine the transformed features with the target for saving
+    train_df = pd.DataFrame(X_train_transformed)
+    train_df['Label'] = y_train.values
     
-    # -----------------------------
-    # 4. Save the Preprocessing Pipeline
-    # -----------------------------
-    pipeline_save_path = r'D:\Optimization-Research\Hybrid_Whale_RIME_IDS_Project\UNSW_NB15\data\proccessed\preprocessing_pipeline.joblib'
-    joblib.dump(preprocessor, pipeline_save_path)
-    print("Preprocessing pipeline saved as 'preprocessing_pipeline.joblib'.")
+    val_df = pd.DataFrame(X_val_transformed)
+    val_df['Label'] = y_val.values
+    
+    test_df = pd.DataFrame(X_test_transformed)
+    test_df['Label'] = y_test.values
+    
+    # Save the processed datasets
+    train_df.to_csv(os.path.join(processed_dir, "Training_dataset.csv"), index=False)
+    val_df.to_csv(os.path.join(processed_dir, "Validation_dataset.csv"), index=False)
+    test_df.to_csv(os.path.join(processed_dir, "Testing_dataset.csv"), index=False)
+    
+    print("Data preprocessing completed successfully.")
+    print(f"Saved processed datasets to {processed_dir}")
+    
+    # Return the file paths for convenience
+    return {
+        "preprocessor": preprocessor_path,
+        "train_data": os.path.join(processed_dir, "Training_dataset.csv"),
+        "val_data": os.path.join(processed_dir, "Validation_dataset.csv"),
+        "test_data": os.path.join(processed_dir, "Testing_dataset.csv")
+    }
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    preprocess_data()

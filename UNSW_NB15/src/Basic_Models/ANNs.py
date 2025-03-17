@@ -3,20 +3,24 @@ import numpy as np
 import joblib
 import datetime
 import os
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix, classification_report, balanced_accuracy_score
-from sklearn.model_selection import StratifiedKFold
-from sklearn.preprocessing import OrdinalEncoder
+import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
-from preprocessing_functions import apply_log_transform
-
-def drop_high_cardinality(df):
-    columns_to_drop = ['srcip', 'dstip'] if set(['srcip', 'dstip']).issubset(df.columns) else []
-    return df.drop(columns=columns_to_drop, errors='ignore')
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
+                            f1_score, roc_auc_score, confusion_matrix)
 
 def build_ann_model(input_dim):
+    """
+    Build a simple Artificial Neural Network model for binary classification.
+    
+    Args:
+        input_dim (int): Number of input features
+        
+    Returns:
+        A compiled ANN model
+    """
     model = Sequential()
     model.add(Dense(128, activation='relu', input_dim=input_dim))
     model.add(Dropout(0.3))
@@ -25,124 +29,175 @@ def build_ann_model(input_dim):
     model.add(Dense(32, activation='relu'))
     model.add(Dropout(0.2))
     model.add(Dense(1, activation='sigmoid'))
-    model.compile(optimizer=Adam(learning_rate=0.001), loss='binary_crossentropy', metrics=['accuracy'])
+    
+    model.compile(
+        optimizer=Adam(learning_rate=0.001),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
     return model
 
 def main():
-    pipeline_path = r'D:\Optimization-Research\Hybrid_Whale_RIME_IDS_Project\UNSW_NB15\data\proccessed\preprocessing_pipeline.joblib'
-    train_csv = r'D:\Optimization-Research\Hybrid_Whale_RIME_IDS_Project\UNSW_NB15\data\row\UNSW_NB15_training-set.csv'
-    test_csv = r'D:\Optimization-Research\Hybrid_Whale_RIME_IDS_Project\UNSW_NB15\data\row\UNSW_NB15_testing-set.csv'
+    """
+    Main function to train and evaluate an ANN model for IDS.
     
-    preprocessor = joblib.load(pipeline_path)
-    print("Preprocessing pipeline loaded successfully.")
-    df_train = pd.read_csv(train_csv)
-    df_test = pd.read_csv(test_csv)
-    print("Training dataset preview:")
-    print(df_train.head())
+    Workflow:
+    1. Load preprocessed data
+    2. Train ANN with fixed parameters
+    3. Evaluate on test set with various metrics
+    4. Save results
+    """
+    print("Starting ANN IDS model training...")
     
-    target_column = 'label'
-    numeric_cols_list = df_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    if target_column in numeric_cols_list:
-        numeric_cols_list.remove(target_column)
-    apply_log_transform.feature_names = numeric_cols_list
+    # Define paths
+    # Use the new preprocessed data paths
+    train_data_path = "D:/Optimization-Research/UNSW_NB15/data/processed/Training_dataset.csv"
+    val_data_path = "D:/Optimization-Research/UNSW_NB15/data/processed/Validation_dataset.csv"
+    test_data_path = "D:/Optimization-Research/UNSW_NB15/data/processed/Testing_dataset.csv"
+    results_dir = "D:/Optimization-Research/UNSW_NB15/src/Basic_Models/Results"
+    os.makedirs(results_dir, exist_ok=True)
     
-    X_train = df_train.drop(columns=[target_column])
-    y_train = df_train[target_column]
-    X_test = df_test.drop(columns=[target_column])
-    y_test = df_test[target_column]
+    # Load data
+    print("Loading preprocessed data...")
+    train_df = pd.read_csv(train_data_path)
+    val_df = pd.read_csv(val_data_path)
+    test_df = pd.read_csv(test_data_path)
     
-    categorical_cols = X_train.select_dtypes(include=['object']).columns.tolist()
-    if len(categorical_cols) > 0:
-        X_train[categorical_cols] = X_train[categorical_cols].astype(str)
-        X_test[categorical_cols] = X_test[categorical_cols].astype(str)
-        encoder = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
-        X_train[categorical_cols] = encoder.fit_transform(X_train[categorical_cols])
-        X_test[categorical_cols] = encoder.transform(X_test[categorical_cols])
-        print("External categorical encoding applied using OrdinalEncoder.")
-    else:
-        print("No categorical columns found for external encoding.")
+    # Separate features and target
+    X_train = train_df.drop('Label', axis=1)
+    y_train = train_df['Label']
     
-    X_train_transformed = preprocessor.transform(X_train)
-    X_test_transformed = preprocessor.transform(X_test)
-    if hasattr(X_train_transformed, "toarray"):
-        X_train_transformed = X_train_transformed.toarray()
-        X_test_transformed = X_test_transformed.toarray()
-    print("X_train_transformed dtype:", X_train_transformed.dtype)
-    print("First 5 rows of transformed training data (dense):")
-    print(X_train_transformed[:5])
+    X_val = val_df.drop('Label', axis=1)
+    y_val = val_df['Label']
     
-    input_dim = X_train_transformed.shape[1]
+    X_test = test_df.drop('Label', axis=1)
+    y_test = test_df['Label']
+    
+    print(f"Training set shape: {X_train.shape}")
+    print(f"Validation set shape: {X_val.shape}")
+    print(f"Test set shape: {X_test.shape}")
+    
+    # Get the number of features for the ANN input
+    input_dim = X_train.shape[1]
+    
+    # Build and compile the ANN model
+    print("Building ANN model...")
     model = build_ann_model(input_dim)
-    es = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    history = model.fit(X_train_transformed, y_train, epochs=50, batch_size=128, validation_split=0.2, callbacks=[es], verbose=1)
+    model.summary()
     
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = []
-    for train_idx, val_idx in skf.split(X_train_transformed, y_train):
-        model_cv = build_ann_model(input_dim)
-        model_cv.fit(X_train_transformed[train_idx], y_train.iloc[train_idx], epochs=20, batch_size=128, verbose=0)
-        score = model_cv.evaluate(X_train_transformed[val_idx], y_train.iloc[val_idx], verbose=0)
-        cv_scores.append(score[1])
-    print("Cross-validation accuracy scores:", cv_scores)
-    print("Mean CV accuracy:", np.mean(cv_scores))
+    # Define early stopping
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=5,
+        restore_best_weights=True
+    )
     
-    y_pred_prob = model.predict(X_test_transformed)
-    y_pred = (y_pred_prob > 0.5).astype(int).reshape(-1)
-    acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred, zero_division=0)
-    rec = recall_score(y_test, y_pred, zero_division=0)
+    # Train the model
+    print("Training the ANN model...")
+    start_time = datetime.datetime.now()
+    
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_val, y_val),
+        epochs=30,
+        batch_size=256,
+        callbacks=[early_stopping],
+        verbose=1
+    )
+    
+    end_time = datetime.datetime.now()
+    training_time = (end_time - start_time).total_seconds()
+    print(f"Training completed in {training_time:.2f} seconds")
+    
+    # Evaluate the model on the test set
+    print("Evaluating model on test set...")
+    start_time = datetime.datetime.now()
+    
+    # Make predictions
+    y_prob = model.predict(X_test)
+    y_pred = (y_prob > 0.5).astype(int).reshape(-1)
+    
+    end_time = datetime.datetime.now()
+    testing_time = (end_time - start_time).total_seconds()
+    print(f"Testing completed in {testing_time:.2f} seconds")
+    
+    # Calculate metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, zero_division=0)
+    recall = recall_score(y_test, y_pred, zero_division=0)
     f1 = f1_score(y_test, y_pred, zero_division=0)
-    auc = roc_auc_score(y_test, y_pred_prob)
-    cm = confusion_matrix(y_test, y_pred)
-    tn, fp, fn, tp = cm.ravel()
-    fpr = fp / (fp + tn)
-    original_feature_count = X_train_transformed.shape[1]
-    selected_feature_count = X_train_transformed.shape[1]
-    frr = (original_feature_count - selected_feature_count) / original_feature_count * 100
-    print("\nEvaluation Metrics:")
-    print(f"Accuracy: {acc:.4f}")
-    print(f"Precision: {prec:.4f}")
-    print(f"Recall: {rec:.4f}")
+    auc_roc = roc_auc_score(y_test, y_prob)
+    
+    # Calculate confusion matrix and derived metrics
+    tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+    fpr = fp / (fp + tn)  # False Positive Rate
+    frr = fn / (fn + tp)  # False Rejection Rate (or False Negative Rate)
+    
+    # Print evaluation metrics
+    print("\nTest Set Evaluation Metrics:")
+    print(f"Accuracy: {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall: {recall:.4f}")
     print(f"F1-Score: {f1:.4f}")
-    print(f"AUC-ROC: {auc:.4f}")
+    print(f"AUC-ROC: {auc_roc:.4f}")
     print(f"False Positive Rate (FPR): {fpr:.4f}")
-    print(f"Feature Reduction Rate (FRR): {frr:.2f}%")
+    print(f"False Rejection Rate (FRR): {frr:.4f}")
+    
     print("\nConfusion Matrix:")
-    print(cm)
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred, zero_division=0))
-    sample_idx = np.random.choice(len(y_test), size=10, replace=False)
-    if isinstance(y_test, pd.Series):
-        actual = y_test.iloc[sample_idx].values
-    else:
-        actual = y_test[sample_idx]
-    print("\nSample Predictions:")
-    print("Actual:", actual)
-    print("Predicted:", y_pred[sample_idx])
-    print("\nEnd-to-End Verification:")
-    print("Original training features shape:", X_train.shape)
-    print("Transformed training features shape:", X_train_transformed.shape)
-    print("Original test features shape:", X_test.shape)
-    print("Transformed test features shape:", X_test_transformed.shape)
-    performance_csv_path = r'D:\Optimization-Research\Hybrid_Whale_RIME_IDS_Project\UNSW_NB15\src\Basic_Models\Results\ANN.csv'
-    performance_data = {
-        "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    print(f"True Negatives: {tn}")
+    print(f"False Positives: {fp}")
+    print(f"False Negatives: {fn}")
+    print(f"True Positives: {tp}")
+    
+    # Create a results dictionary
+    results = {
         "Model": "ANN",
-        "Accuracy": acc,
-        "Precision": prec,
-        "Recall": rec,
-        "F1_Score": f1,
-        "AUC-ROC": auc,
-        "FPR": fpr,
-        "FRR": frr,
-        "Balanced Accuracy": balanced_accuracy_score(y_test, y_pred)
+        "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Test_Accuracy": accuracy,
+        "Test_Precision": precision,
+        "Test_Recall": recall,
+        "Test_F1_Score": f1,
+        "Test_AUC_ROC": auc_roc,
+        "Test_FPR": fpr,
+        "Test_FRR": frr,
+        "TN": tn,
+        "FP": fp,
+        "FN": fn,
+        "TP": tp,
+        "Training_Time": training_time,
+        "Testing_Time": testing_time
     }
-    perf_df = pd.DataFrame([performance_data])
-    if os.path.exists(performance_csv_path):
-        perf_df.to_csv(performance_csv_path, mode='a', header=False, index=False)
+    
+    # Save results to CSV
+    results_df = pd.DataFrame([results])
+    results_path = os.path.join(results_dir, "ANN.csv")
+    
+    # Check if the results file already exists
+    if os.path.exists(results_path):
+        # Append without writing the header
+        results_df.to_csv(results_path, mode='a', header=False, index=False)
     else:
-        perf_df.to_csv(performance_csv_path, index=False)
-    print("Performance measures saved in CSV file:", performance_csv_path)
+        # Create a new file with header
+        results_df.to_csv(results_path, index=False)
+    
+    print(f"Results saved to {results_path}")
+    
+    # Sample manual inspection
+    print("\nSample Predictions (First 10 test instances):")
+    sample_indices = np.arange(10)
+    
+    if isinstance(y_test, pd.Series):
+        sample_actual = y_test.iloc[sample_indices].values
+    else:
+        sample_actual = y_test[sample_indices]
+        
+    sample_pred = y_pred[sample_indices]
+    
+    for i, (actual, pred) in enumerate(zip(sample_actual, sample_pred)):
+        print(f"Sample {i+1}: Actual={actual}, Predicted={pred}, {'Correct' if actual == pred else 'Incorrect'}")
+    
+    print("\nANN training completed successfully.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,0 +1,2 @@
+Model,Timestamp,Best_Parameters,Cross_Val_Accuracy_Mean,Cross_Val_Accuracy_Std,Validation_Accuracy,Test_Accuracy,Test_Precision,Test_Recall,Test_F1_Score,Test_AUC_ROC,Test_FPR,Test_FRR,TN,FP,FN,TP,Sample_Size
+K-Nearest Neighbors,2025-03-17 05:03:36,"{'algorithm': 'auto', 'n_neighbors': 11, 'p': 1, 'weights': 'distance'}",0.9833400022966451,0.00028376746655924706,0.9836095238095238,0.9835715850325235,0.8952802359882006,0.5463546354635463,0.6785913918390162,0.8482240795980295,0.0020950544910886414,0.45364536453645365,101455,213,1512,1821,100000
